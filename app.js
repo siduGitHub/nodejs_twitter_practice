@@ -81,9 +81,9 @@ app.post('/login/', async (request, response) => {
       dbResponse.password,
     )
     if (isPasswordCorrect) {
-      const payload = {username: username, userId: user_id}
+      const payload = {username: username}
       const jwtToken = jwt.sign(payload, 'SERETE-CODE')
-      response.send(jwtToken)
+      response.send({jwtToken})
     } else {
       response.status(400)
       response.send('Invalid password')
@@ -176,7 +176,7 @@ app.get('/user/followers/', AuthenticationToken, async (request, response) => {
   const {username} = request
   console.log(username)
   const getFollowersIds = `
-        SELECT * FROM follower INNER JOIN user ON follower.follower_user_id = user.user_id WHERE user.username="${username}";
+        SELECT follower_id FROM follower INNER JOIN user ON user.user_id=follower.follower_user_id WHERE username="${username}";
     `
   const dbResponse = await db.all(getFollowersIds)
   console.log(dbResponse)
@@ -228,9 +228,14 @@ app.get(
   UserFollowingVerified,
   async (request, response) => {
     const {tweetId} = request.params
-    const getDetails = `
+    /*const getDetails = `
       SELECT tweet,COUNT(like_id) AS likes,COUNT(reply_id)AS replies,date_time AS dateTime FROM (tweet INNER JOIN reply ON tweet.tweet_id=reply.tweet_id) AS T INNER JOIN like ON T.tweet_id=like.tweet_id WHERE T.tweet_id=${tweetId};
-     `
+     `*/
+    const getDetails = `
+      SELECT tweet, (SELECT COUNT() FROM like WHERE  tweet_id=${tweetId}) As likes,
+                    (SELECT COUNT() FROM reply WHERE tweet_id=${tweetId}) As replies,
+                    date_time AS dateTime FROM tweet WHERE tweet_id=${tweetId}; 
+    `
     const dbResult = await db.get(getDetails)
     response.send(dbResult)
 
@@ -278,15 +283,27 @@ app.get(
 //API 9
 app.get('/user/tweets/', AuthenticationToken, async (request, response) => {
   const {username} = request
+  /*const getTweetsOfUser = `
+    SELECT tweet,COUNT(like_id) AS likes, COUNT(reply_id) AS replies, date_time AS dateTime FROM ((tweet INNER JOIN user ON tweet.user_id=user.user_id) AS T INNER JOIN reply ON T.user_id=reply.user_id) AS N INNER JOIN like ON N.user_id=like.user_id WHERE user.username="${username}";
+  `*/
+  const getUserId = `
+    SELECT user_id,username FROM user WHERE user.username="${username}";
+  `
+  const dbuserId = await db.get(getUserId)
+  console.log(dbuserId)
+  const userId = dbuserId.user_id
+  console.log(userId)
   const getTweetsOfUser = `
-    SELECT * FROM tweet INNER JOIN user ON tweet.user_id=user.user_id WHERE username="${username}";
+    SELECT tweet, (SELECT COUNT() FROM like WHERE user_id=${userId}) AS likes,
+                  (SELECT COUNT() FROM reply WHERE user_id=${userId}) AS replies,
+                  date_time AS dateTime FROM tweet  WHERE user_id=${userId};
   `
   const dbResponse = await db.all(getTweetsOfUser)
   response.send(dbResponse)
 })
 
 //ApI 10
-app.post('/user/tweets/', async (request, response) => {
+app.post('/user/tweets/', AuthenticationToken, async (request, response) => {
   const {tweet} = request.body
   console.log(tweet)
   const CreatePost = `
